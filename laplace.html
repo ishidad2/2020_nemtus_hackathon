@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+  <title>NEMTUSHackathon</title>
+</head>
+<body>
+
+  <nav class="navbar navbar-light bg-light">
+    <div class="container-fluid">
+      <span class="navbar-text">
+        NEMTUSHackathon
+      </span>
+    </div>
+  </nav>
+  <div class="container">
+    <div class="card mt-3">
+      <div class="card-body">
+        <div class="d-grid gap-2 col-6 mx-auto">
+          <label for="privateKey" class="form-label">秘密鍵（プライベートキー）</label>
+          <input type="password" class="form-control" id="privateKey">
+          <label for="amount" class="form-label">数量</label>
+          <input type="number" class="form-control" id="amount" min="0.01" max="1" step="0.01" value="0.01">
+        </div>
+        <div>
+        </div>
+      </div>
+    </div>
+    <div class="card mt-3">
+      <div class="card-body">
+        <div class="d-grid gap-2 col-6 mx-auto">
+          <label for="message" class="form-label">メッセージ</label>
+          <input type="text" class="form-control" id="message">
+          <button class="btn btn-primary" type="button" id="msgBtn">メッセージを送る</button>
+        </div>
+        <div>
+        </div>
+      </div>
+    </div>
+    <div class="card mt-3">
+      <div class="card-body">
+        <div class="d-grid gap-2 col-6 mx-auto">
+          <label for="address" class="form-label">送信先アドレス</label>
+          <input type="text" class="form-control" id="address" value="" disabled>
+          <button class="btn btn-primary" type="button" id="btn_1">ball_add(ボールが3個増える)</button>
+          <button class="btn btn-success" type="button" id="btn_2">life_up(自機のライフが2機増え、ボールも1個増る)</button>
+          <button class="btn btn-primary" type="button" id="btn_3">speed_up(自機の移動速度がアップ)</button>
+          <button class="btn btn-success" type="button" id="btn_4">speed_down(自機の移動速度がダウン)</button>
+          <button class="btn btn-primary" type="button" id="btn_5">score_up(転送したXYMの数量分スコアがアップ)</button>
+        </div>
+        <div>
+          各ボタンの説明は <a href="https://github.com/nabe-3/NEMTUSHackathon#readme" target="_blank" rel="noopener noreferrer">こちら</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+  <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+  <script src="https://xembook.github.io/nem2-browserify/symbol-sdk-1.0.2.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.1.9/dist/sweetalert2.all.min.js"></script>
+  <script>
+    const symbolSdk = require("/node_modules/symbol-sdk");
+
+    const NODE = "https://zzz-symbol.link:3001";
+    const networkCurrencyMosaicId = new symbolSdk.MosaicId("6BED913FA20223F8");//メインネットXYM
+    const address = symbolSdk.Address.createFromRawAddress("NBRQB6VEXDK4WGIIE5RZZ7K6UFR4D4M4XHHIEUY"); //メインネット
+    const networkType = symbolSdk.NetworkType.MAIN_NET;
+
+    // const NODE = "https://yamatanoorochi.sfn.tools:3001";
+    // const networkCurrencyMosaicId = new symbolSdk.MosaicId("3A8416DB2D53B6C8");//テストネットXYM
+    // const address = symbolSdk.Address.createFromRawAddress("TD4B6MK7BKOKA3WJH74YDZODG5QN5DFXBCOSWNQ"); //テストネット
+    // const networkType = symbolSdk.NetworkType.TEST_NET;
+
+    const networkCurrencyDivisibility  = 6; //XYMモザイクの過分性
+    const repo = new symbolSdk.RepositoryFactoryHttp(NODE);
+    const txRepo = repo.createTransactionRepository();
+    const nwRepo = repo.createNetworkRepository();
+
+    const showToast = (()=>{
+      const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3000,
+        timerProgressBar: true,
+        didOpen: (toast) => {
+          toast.addEventListener('mouseenter', Swal.stopTimer)
+          toast.addEventListener('mouseleave', Swal.resumeTimer)
+        }
+      })
+
+      Toast.fire({
+        icon: 'success',
+        title: 'Signed in successfully'
+      })
+    });
+    
+    const sendTransfar = (async (strMsg)=>{
+      disabled_btn(true);
+      const privateKey = $('#privateKey').val();
+      const amount = $('#amount').val();
+      if(privateKey === ""){disabled_btn(false); return;}
+
+      const signerAddress = symbolSdk.Account.createFromPrivateKey(privateKey, networkType);
+      const epochAdjustment = await repo.getEpochAdjustment().toPromise();
+      const networkGenerationHash = await repo.getGenerationHash().toPromise();
+      const medianFeeMultiplier = (await nwRepo.getTransactionFees().toPromise()).medianFeeMultiplier;
+
+      //トランスファートランザクション生成
+      const tx = symbolSdk.TransferTransaction.create(
+        symbolSdk.Deadline.create(epochAdjustment),
+        address,
+        [new symbolSdk.Mosaic(networkCurrencyMosaicId, symbolSdk.UInt64.fromUint(amount * Math.pow(10, networkCurrencyDivisibility)))],
+        symbolSdk.PlainMessage.create(strMsg),
+        networkType,
+      ).setMaxFee(medianFeeMultiplier);
+
+      //署名して送信
+      const signedtxd = signerAddress.sign(tx, networkGenerationHash);
+
+      console.log("hash:"+signedtxd.hash);
+      console.log("payload"+signedtxd.payload);
+
+      txRepo.announce(signedtxd).subscribe((x)=>{
+          showToast();
+          disabled_btn(false);
+          console.log(x);
+        }
+        ,(er)=>console.log(er));
+    });
+
+    const disabled_btn = ((bool)=>{
+      $("#msgBtn").prop("disabled", bool);
+      $("#btn_1").prop("disabled", bool);
+      $("#btn_2").prop("disabled", bool);
+      $("#btn_3").prop("disabled", bool);
+      $("#btn_4").prop("disabled", bool);
+      $("#btn_5").prop("disabled", bool);
+    });
+
+    (async ()=>{
+      //アドレスセット
+      $('#address').val(address.address);
+      
+      //メッセージボタンクリック
+      $('#msgBtn').on('click', function(){
+        const msg = $('#message').val();
+        if(msg === ""){return;}
+        sendTransfar(msg);
+      });
+
+      $('#btn_1').on('click', function(){
+        sendTransfar('ball_add');
+      });
+
+      $('#btn_2').on('click', function(){
+        sendTransfar('life_up');
+      });
+
+      $('#btn_3').on('click', function(){
+        sendTransfar('speed_up');
+      });
+
+      $('#btn_4').on('click', function(){
+        sendTransfar('speed_down');
+      });
+
+      $('#btn_5').on('click', function(){
+        sendTransfar('score_up');
+      });
+
+      $('#amount').on('mouseup keyup', function(e){
+        var amount = parseFloat($(this).val());
+        var max = parseFloat($(this).attr('max'));
+        var min = parseFloat($(this).attr('min'));
+        if(amount > max){ $(this).val(max); }
+        if(amount < min){ $(this).val(min); }
+        if(isNaN(amount)){ $(this).val('0.01'); }
+      });
+    })();
+
+  </script>
+</body>
+</html>
